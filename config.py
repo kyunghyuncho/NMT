@@ -216,8 +216,8 @@ def get_config_wmt15_de_en_51k_refMultiCG():
     config['trg_vocab'] = basedir + 'joint_vocab.sub.en.52k.pkl'
     config['src_data'] = basedir + 'de2en/all.tok.clean.shuf.split.de-en.de'
     config['trg_data'] = basedir + 'de2en/all.tok.clean.shuf.de-en.en'
-    config['src_vocab_size'] = 200000
-    config['trg_vocab_size'] = 51546
+    config['src_vocab_size'] = 40000
+    config['trg_vocab_size'] = 40000
     config['unk_id'] = 1
     config['src_eos_idx'] = 0
     config['trg_eos_idx'] = 0
