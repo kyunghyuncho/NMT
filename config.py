@@ -818,39 +818,36 @@ def get_config_wmt15_fideen_en_fast_idxFix_nanFix_favorFi():
     return ReadOnlyDict(config)
 
 
-def get_config_wmt15_fideen_en_fast_idxFix_nanFix_favorFi_DEBUG():
+def get_config_fide_en_condAll():
     config = {}
 
     # Model related
-    config['num_encs'] = 3
+    config['num_encs'] = 2
     config['num_decs'] = 1
     config['seq_len'] = 50
     config['enc_nhids_0'] = 1000
     config['enc_nhids_1'] = 1000
-    config['enc_nhids_2'] = 800
     config['dec_nhids'] = 1000
     config['enc_embed_0'] = 620
     config['enc_embed_1'] = 620
-    config['enc_embed_2'] = 420
     config['dec_embed'] = 620
     config['representation_dim'] = 2000  # this is the joint annotation
                                          # dimension of encoders
-    config['saveto'] = 'multiEnc_FIDEEN_multiCG_fast_idxFix_nanFix_favorFi_DEBUG'
+    config['saveto'] = 'multiEnc_FIDE_condAll'
 
     # Optimization related
     config['batch_size_enc_0'] = 80
     config['batch_size_enc_1'] = 80
-    config['batch_size_enc_2'] = 80
     config['sort_k_batches'] = 12
     config['step_rule'] = 'Adam'
     config['learning_rate'] = 1e-4
     config['step_clipping'] = 5
     config['weight_scale'] = 0.01
-    config['schedule'] = [36, 24, 12]
+    config['schedule'] = [12, 12]
     config['save_accumulators'] = True  # algorithms' update step variables
     config['load_accumulators'] = True  # be careful with this
-    config['exclude_encs'] = [True, True, False]
-    config['min_seq_lens'] = [0, 0, 10]
+    config['exclude_encs'] = [True, True]
+    config['min_seq_lens'] = [0, 0]
     config['additional_excludes'] = \
         ['/decoder/sequencegeneratorwithmulticontext/readout/lookupfeedbackwmt15/lookuptable.W']
 
@@ -858,28 +855,23 @@ def get_config_wmt15_fideen_en_fast_idxFix_nanFix_favorFi_DEBUG():
     config['weight_noise_ff'] = False
     config['weight_noise_rec'] = False
     config['dropout'] = 1.0
-    config['drop_input'] = [0., 0., 0.4]
+    config['drop_input'] = [0., 0.]
 
     # Vocabulary/dataset related
     basedir = '/data/lisatmp3/firatorh/nmt/wmt15/data/fideen-en/'
     config['stream'] = 'multiCG_stream'
     config['src_vocab_0'] = basedir + 'fi2en/vocab.fi.pkl'
     config['src_vocab_1'] = basedir + 'de2en/vocab.de.pkl'
-    config['src_vocab_2'] = basedir + 'joint_vocab.sub.en.52k.pkl'
     config['src_data_0'] = basedir + 'fi2en/all.tok.clean.seg.shuf2.fi-en.fi'
     config['src_data_1'] = basedir + 'de2en/all.tok.clean.shuf.split.de-en.de'
-    config['src_data_2'] = basedir + 'es2en/all.tok.clean.shuf.es-en.en'
     config['src_vocab_size_0'] = 40001
     config['src_vocab_size_1'] = 200000
-    config['src_vocab_size_2'] = 40001
     config['src_eos_idx_0'] = 40000
     config['src_eos_idx_1'] = 0
-    config['src_eos_idx_2'] = 0
 
     config['trg_vocab'] = basedir + 'joint_vocab.sub.en.52k.pkl'
     config['trg_data_0'] = basedir + 'fi2en/all.tok.clean.shuf2.fi-en.en'
     config['trg_data_1'] = basedir + 'de2en/all.tok.clean.shuf.de-en.en'
-    config['trg_data_2'] = basedir + 'es2en/all.tok.clean.shuf.es-en.en'
     config['trg_vocab_size'] = 51546
     config['trg_eos_idx'] = 0
 
