@@ -209,8 +209,7 @@ class BleuValidator(SimpleExtension, SamplingBase):
         self.unk_idx = self.vocab[self.unk_sym]
         self.best_models = []
         self.val_bleu_curve = []
-        self.beam_search = BeamSearch(beam_size=beam_size,
-                                      samples=samples)
+        self.beam_search = BeamSearch(samples=samples)
         self.multibleu_cmd = ['perl', bleu_script, val_set_grndtruth, '<']
 
         # Create saving directory if it does not exist
