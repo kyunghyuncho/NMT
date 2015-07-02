@@ -5,16 +5,20 @@ import os
 import re
 import time
 
+from six.moves import cPickle
 from toolz import merge
 
 from blocks.algorithms import DifferentiableCostMinimizer
-from blocks.dump import MainLoopDumpManager, save_parameter_values
-from blocks.extensions import SimpleExtension
+from blocks.extensions import SimpleExtension, TrainingExtension
 from blocks.monitoring.evaluators import AggregationBuffer
 from blocks.extensions.monitoring import MonitoringExtension
-from blocks.extensions.saveload import LoadFromDump, Dump
+from blocks.serialization import load_parameter_values, secure_dump
+from blocks.utils import reraise_as
 
 logger = logging.getLogger(__name__)
+
+LOADED_FROM = "loaded_from"
+SAVED_TO = "saved_to"
 
 
 class PrintMultiStream(SimpleExtension):
@@ -130,18 +134,59 @@ class SimpleTrainingDataMonitoringWithMultiCG(SimpleExtension,
             self.main_loop.algorithm.retvals[enc_id].items())
 
 
-class MainLoopDumpManagerWMT15(MainLoopDumpManager):
+class MainLoopDumpManagerWMT15(object):
     """Checkpointintg for multi CG main loop."""
 
     def __init__(self, saveto, save_accumulators=False,
                  load_accumulators=False):
-        super(MainLoopDumpManagerWMT15, self).__init__(saveto)
+        self.folder = saveto
         self.save_accumulators = save_accumulators
         self.load_accumulators = load_accumulators
 
     @property
     def path_to_accumulators(self):
         return os.path.join(self.folder, 'algo{}.npz')
+
+    @property
+    def path_to_parameters(self):
+        return os.path.join(self.folder, 'params.npz')
+
+    @property
+    def path_to_iteration_state(self):
+        return os.path.join(self.folder, 'iterations_state.pkl')
+
+    @property
+    def path_to_log(self):
+        # The extension is omitted for the log because advanced
+        # log classes might have a better format for storing on the disk
+        # then pickled file. Or alternatively, log will be dump as pure
+        # text file of (time, key, value) triples. Currenly log is just
+        # pickled though.
+        return os.path.join(self.folder, 'log')
+
+    def dump_iteration_state(self, main_loop):
+        with open(self.path_to_iteration_state, "wb") as destination:
+            secure_dump(main_loop.iteration_state, destination)
+
+    def dump_log(self, main_loop):
+        with open(self.path_to_log, "wb") as destination:
+            secure_dump(main_loop.log, destination)
+
+    def load_parameters(self):
+        return load_parameter_values(self.path_to_parameters)
+
+    def load_iteration_state(self):
+        with open(self.path_to_iteration_state, "rb") as source:
+            return cPickle.load(source)
+
+    def load_log(self):
+        with open(self.path_to_log, "rb") as source:
+            return cPickle.load(source)
+
+    def load(self):
+        return (self.load_parameters(),
+                self.load_iteration_state(),
+                self.load_log())
 
     def load_to(self, main_loop):
         """Loads the dump from the root folder into the main loop."""
@@ -271,19 +316,68 @@ class MainLoopDumpManagerWMT15(MainLoopDumpManager):
                         accums[aidx])
 
 
-class DumpWithMultiCG(Dump):
-    """Wrapper to use MainLoopDumpManagerWMT15"""
+class DumpWithMultiCG(SimpleExtension):
+    """Dumps the state of the main loop.
+    Makes a `SAVED_TO` record in the log with the dumping destination
+    in the case of success and ``None`` in the case of failure.
+    Parameters
+    ----------
+    state_path : str
+        The folder to dump the state to. Will be created it does not
+        exist.
+    Notes
+    -----
+    This is an extension of old saveload.Dump.
+    Requires the model to be a Brick or a list of Bricks.
+    """
     def __init__(self, saveto, save_accumulators=False, **kwargs):
         kwargs.setdefault("after_training", True)
         super(DumpWithMultiCG, self).__init__(saveto, **kwargs)
         self.manager = MainLoopDumpManagerWMT15(
             saveto, save_accumulators=save_accumulators)
 
+    def do(self, callback_name, *args, **kwargs):
+        try:
+            self.main_loop.log.current_row[SAVED_TO] = (
+                self.manager.folder)
+            self.manager.dump(self.main_loop)
+        except Exception:
+            self.main_loop.log.current_row[SAVED_TO] = None
+            raise
 
-class LoadFromDumpMultiCG(LoadFromDump):
+
+class LoadFromDumpMultiCG(TrainingExtension):
     """Wrapper to use MainLoopDumpManagerWMT15"""
 
     def __init__(self, saveto, load_accumulators=False, **kwargs):
         super(LoadFromDumpMultiCG, self).__init__(saveto, **kwargs)
         self.manager = MainLoopDumpManagerWMT15(
             saveto, load_accumulators=load_accumulators)
+
+    def before_training(self):
+        if not os.path.exists(self.manager.folder):
+            logger.info("No dump found")
+            return
+        logger.info("Loading the state from {} into the main loop"
+                    .format(self.manager.folder))
+        try:
+            self.manager.load_to(self.main_loop)
+            self.main_loop.log.current_row[LOADED_FROM] = self.manager.folder
+        except Exception:
+            reraise_as("Failed to load the state")
+
+
+def save_parameter_values(param_values, path):
+    """Compactly save parameter values.
+    This is a thin wrapper over `numpy.savez`. It deals with
+    `numpy`'s vulnerability to slashes in file names.
+    Parameters
+    ----------
+    param_values : dict of (parameter name, numpy array)
+        The parameter values.
+    path : str of file
+        The destination for saving.
+    """
+    param_values = {name.replace("/", "-"): param
+                    for name, param in param_values.items()}
+    numpy.savez(path, **param_values)
