@@ -23,6 +23,8 @@ class SequenceMultiContentAttention(GenericSequenceAttention, Initializable):
         # TODO: This is ugly, fix it
         kwargs['attended_dim'] = attended_dims[0]
         super(SequenceMultiContentAttention, self).__init__(**kwargs)
+        if not state_transformer:
+            state_transformer = Linear(use_bias=False)
         self.match_dim = match_dim
         self.attended_dims = attended_dims
         self.state_transformer = state_transformer

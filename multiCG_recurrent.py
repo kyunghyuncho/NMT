@@ -1,5 +1,5 @@
 from blocks.bricks import (Tanh, Linear,
-                           Initializable, MLP, Sigmoid)
+                           Initializable, MLP, Logistic)
 from blocks.bricks.base import application
 from blocks.bricks.recurrent import recurrent, Bidirectional, BaseRecurrent
 from blocks.utils import shared_floatx_nans
@@ -62,7 +62,7 @@ class GRUwithContext(BaseRecurrent, Initializable):
         if not activation:
             activation = Tanh()
         if not gate_activation:
-            gate_activation = Sigmoid()
+            gate_activation = Logistic()
         self.activation = activation
         self.gate_activation = gate_activation
 
