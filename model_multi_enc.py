@@ -36,7 +36,8 @@ from multiCG_algorithm import (GradientDescentWithMultiCG,
 from multiCG_attention import SequenceMultiContentAttention
 from multiCG_extensions import (TrainingDataMonitoringWithMultiCG,
                                 DumpWithMultiCG,
-                                LoadFromDumpMultiCG)
+                                LoadFromDumpMultiCG,
+                                PrintMultiStream)
 from multiCG_recurrent import BidirectionalWMT15, GRUwithContext
 from multiCG_sequence_generator import (
     LookupFeedbackWMT15, SequenceGeneratorWithMultiContext)
@@ -142,11 +143,11 @@ class BidirectionalEncoder(Initializable):
         self.lookup.dim = self.embedding_dim
 
         self.fwd_fork.input_dim = self.embedding_dim
-        self.fwd_fork.output_dims = [self.state_dim
-                                     for _ in self.fwd_fork.output_names]
+        self.fwd_fork.output_dims = [self.bidir.children[0].get_dim(name)
+                                     for name in self.fwd_fork.output_names]
         self.back_fork.input_dim = self.embedding_dim
-        self.back_fork.output_dims = [self.state_dim
-                                      for _ in self.back_fork.output_names]
+        self.back_fork.output_dims = [self.bidir.children[1].get_dim(name)
+                                      for name in self.back_fork.output_names]
 
     @application(inputs=['source_sentence', 'source_sentence_mask'],
                  outputs=['representation'])
@@ -351,19 +352,19 @@ def main(config, tr_stream, dev_streams):
 
         logger.info("Parameter names for computation graph[{}]: ".format(i))
         enc_dec_param_dict = merge(
-            Selector(multi_encoder.encoders[i]).get_params(),
-            Selector(multi_encoder.annotation_embedders[i]).get_params(),
-            Selector(multi_encoder.src_selector_embedder).get_params(),
-            Selector(multi_encoder.trg_selector_embedder).get_params(),
-            Selector(decoder).get_params())
+            Selector(multi_encoder.encoders[i]).get_parameters(),
+            Selector(multi_encoder.annotation_embedders[i]).get_parameters(),
+            Selector(multi_encoder.src_selector_embedder).get_parameters(),
+            Selector(multi_encoder.trg_selector_embedder).get_parameters(),
+            Selector(decoder).get_parameters())
         for name, value in enc_dec_param_dict.iteritems():
             logger.info('    {:15}: {}'.format(value.get_value().shape, name))
         logger.info("Total number of parameters for computation graph[{}]: {}"
                     .format(i, len(enc_dec_param_dict)))
 
     # Print parameter names
-    enc_dec_param_dict = merge(Selector(multi_encoder).get_params(),
-                               Selector(decoder).get_params())
+    enc_dec_param_dict = merge(Selector(multi_encoder).get_parameters(),
+                               Selector(decoder).get_parameters())
     logger.info("Parameter names: ")
     for name, value in enc_dec_param_dict.iteritems():
         logger.info('    {:15}: {}'.format(value.get_value().shape, name))
@@ -392,7 +393,7 @@ def main(config, tr_stream, dev_streams):
             "Erroneous config::[num_encs] should match [exclude_encs]"
         for i in xrange(config['num_encs']):
             if config['exclude_encs'][i]:
-                p_enc = Selector(multi_encoder.encoders[i]).get_params()
+                p_enc = Selector(multi_encoder.encoders[i]).get_parameters()
                 training_params.append(
                     [p for p in cgs[i].parameters
                         if (not any([pp == p for pp in p_enc.values()])) and
@@ -415,7 +416,7 @@ def main(config, tr_stream, dev_streams):
 
     # Set up training algorithm
     algorithm = GradientDescentWithMultiCG(
-        costs=costs, params=training_params, drop_input=config['drop_input'],
+        costs=costs, parameters=training_params, drop_input=config['drop_input'],
         step_rule=CompositeRule(
             [StepClipping(threshold=config['step_clipping']),
              RemoveNotFinite(0.9),
@@ -437,7 +438,7 @@ def main(config, tr_stream, dev_streams):
         FinishAfter(after_n_batches=config['finish_after']),
         TrainingDataMonitoringWithMultiCG(observables, after_batch=True),
         Printing(after_batch=True),
-        multiCG_stream.PrintMultiStream(after_batch=True),
+        PrintMultiStream(after_batch=True),
         DumpWithMultiCG(saveto=config['saveto'],
                         save_accumulators=config['save_accumulators'],
                         every_n_batches=config['save_freq'])]
@@ -456,7 +457,7 @@ def main(config, tr_stream, dev_streams):
 
         # Filter the output variable that corresponds to the sample
         # generated[1] is the next_outputs
-        samples, = VariableFilter(
+        _, samples = VariableFilter(
             bricks=[decoder.sequence_generator], name="outputs")(
                 ComputationGraph(generated[1]))
 

@@ -93,17 +93,20 @@ class Sampler(SimpleExtension, SamplingBase):
         # Get current model parameters
         if not self._synced:
             self._multiCG = self._isMultiCG(batch)
+            model_params_dict = self.model.get_parameter_dict()
             if self._multiCG:
                 sources = self._get_attr_rec(
                     self.main_loop.data_stream.streams[self.enc_id],
                     'data_stream')
-                model_params = self.main_loop.models[self.enc_id].params
+                for k, v in self.main_loop.models[
+                        self.enc_id].get_parameter_dict().iteritems():
+                    model_params_dict[k].set_value(v.get_value())
             else:
                 sources = self._get_attr_rec(self.main_loop, 'data_stream')
-                model_params = self.main_loop.model.params
+                for k, v in self.main_loop.model.get_parameter_dict().iteritems():
+                    model_params_dict[k].set_value(v.get_value)
 
             self.sources = sources
-            self.model.params = model_params
             self._synced = True
 
         if self._multiCG:
@@ -260,15 +263,20 @@ class BleuValidator(SimpleExtension, SamplingBase):
                         "Target Selector variable not given in BeamSearch")
                 self._multiCG = True
 
+            model_params_dict = self.model.get_parameter_dict()
             if self._multiCG:
                 self.sources = self._get_attr_rec(
                     self.main_loop.data_stream.streams[self.enc_id],
                     'data_stream')
-                self.model.params = self.main_loop.models[self.enc_id].params
+                for k, v in self.main_loop.models[
+                        self.enc_id].get_parameter_dict().iteritems():
+                    model_params_dict[k].set_value(v.get_value())
             else:
                 self.sources = self._get_attr_rec(
                     self.main_loop, 'data_stream')
-                self.model.params = self.main_loop.model.params
+                for k, v in\
+                        self.main_loop.model.get_parameter_dict().iteritems():
+                    model_params_dict[k].set_value(v.get_value())
 
             self._synced = True
 
@@ -394,10 +402,10 @@ class BleuValidator(SimpleExtension, SamplingBase):
             if self._multiCG:
                 for i in xrange(self.main_loop.num_cgs):
                     params_to_save.append(
-                        self.main_loop.models[i].get_param_values())
+                        self.main_loop.models[i].get_parameter_values())
                 params_to_save = merge(params_to_save)
             else:
-                params_to_save = self.main_loop.model.get_param_values()
+                params_to_save = self.main_loop.model.get_parameter_values()
 
             self._save_params(model, params_to_save)
             self._save_bleu_scores()

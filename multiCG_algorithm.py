@@ -8,9 +8,9 @@ import traceback
 from collections import OrderedDict
 from theano import tensor
 
-from blocks import config as cfg
-from blocks.algorithms import (GradientDescent, StepClipping,
-                               CompositeRule, variable_mismatch_error,
+from blocks.config import config as cfg
+from blocks.algorithms import (GradientDescent,
+                               variable_mismatch_error,
                                DifferentiableCostMinimizer,
                                StepRule)
 from blocks.main_loop import (MainLoop, TrainingFinish,
@@ -66,8 +66,8 @@ class MainLoopWithMultiCG(MainLoop):
                     logger.warning(
                         "different costs for model {} and algorithm {}"
                         .format(i, i))
-                if not (set(self.models[i].get_params().values()) ==
-                        set(self.algorithm.algorithms[i].params)):
+                if not (set(self.models[i].get_parameter_dict().values()) ==
+                        set(self.algorithm.algorithms[i].parameters)):
                     logger.warning(
                         "different params for model {} and algorithm {}"
                         .format(i, i))
@@ -117,7 +117,7 @@ class MainLoopWithMultiCG(MainLoop):
 class GradientDescentWithMultiCG(object):
     """Gradient Descent that trains only one CG at a time, among many."""
 
-    def __init__(self, costs, params, step_rule, drop_input=None, **kwargs):
+    def __init__(self, costs, parameters, step_rule, drop_input=None, **kwargs):
         self.num_cgs = len(costs)
         self.algorithms = []
         self._functions = []
@@ -133,7 +133,7 @@ class GradientDescentWithMultiCG(object):
         for i in xrange(len(costs)):
             self.algorithms.append(
                 GradientDescent(
-                    cost=costs[i], params=params[i],
+                    cost=costs[i], parameters=parameters[i],
                     step_rule=step_rule))
 
     def initialize(self):
@@ -151,7 +151,7 @@ class GradientDescentWithMultiCG(object):
         for i in xrange(self.num_cgs):
             logger.info("Initializing the training algorithm {}".format(i))
             all_updates = self.algorithms[i].updates
-            for param in self.algorithms[i].params:
+            for param in self.algorithms[i].parameters:
                 all_updates.append(
                     (param, param - self.algorithms[i].steps[param]))
             all_updates += self.algorithms[i].step_rule_updates
@@ -186,7 +186,7 @@ class GradientDescentWithMultiCG(object):
 
 class GradientDescentWithMultiCGandMonitors(object):
 
-    def __init__(self, costs, params, step_rule, **kwargs):
+    def __init__(self, costs, parameters, step_rule, **kwargs):
         self.num_cgs = len(costs)
         self.algorithms = []
         self._functions = []
@@ -195,7 +195,7 @@ class GradientDescentWithMultiCGandMonitors(object):
         for i in xrange(len(costs)):
             self.algorithms.append(
                 GradientDescent(
-                    cost=costs[i], params=params[i],
+                    cost=costs[i], parameters=parameters[i],
                     step_rule=step_rule))
 
     def initialize(self):
@@ -213,7 +213,7 @@ class GradientDescentWithMultiCGandMonitors(object):
         for i in xrange(self.num_cgs):
             logger.info("Initializing the training algorithm {}".format(i))
             all_updates = self.algorithms[i].updates
-            for param in self.algorithms[i].params:
+            for param in self.algorithms[i].parameters:
                 all_updates.append(
                     (param, param - self.algorithms[i].steps[param]))
             all_updates += self.algorithms[i].step_rule_updates

@@ -8,7 +8,7 @@ from blocks.bricks.base import application, lazy
 from blocks.bricks.parallel import Parallel, Distribute
 from blocks.bricks.recurrent import recurrent
 
-from blocks.utils import dict_union, dict_subset
+from blocks.utils import dict_union, dict_subset, pack
 
 from theano import tensor
 
@@ -95,15 +95,10 @@ class SequenceMultiContentAttention(GenericSequenceAttention, Initializable):
              for i in xrange(self.num_attended)] +
             ['attended_mask'] + self.state_names)
 
-    @application
-    def initial_glimpses(self, name, batch_size, attended):
-        # TODO: adapted to return initial states for both weighted_averages and
-        # weights at the same time for both calls to ensure different output
-        # names, NOTE that: ordering matters
-        if name == "weighted_averages" or name == "weights":
-            return [tensor.zeros((batch_size, self.attended_dims[0])),
-                    tensor.zeros((batch_size, attended[0].shape[0]))]
-        raise ValueError("Unknown glimpse name {}".format(name))
+    @application(outputs=['weighted_averages', 'weights'])
+    def initial_glimpses(self, batch_size, attended):
+        return [tensor.zeros((batch_size, self.attended_dims[0])),
+                tensor.zeros((batch_size, attended[0].shape[0]))]
 
     @application(inputs=['attended'],
                  outputs=['preprocessed_attended_0',
@@ -140,9 +135,36 @@ class AttentionRecurrentWithMultiContext(AbstractAttentionRecurrent,
     This block is responsible of calling the wrappers for initial states,
     taking glimpses and computing states.
 
+    Parameters
+    ----------
+    num_contexts : int
+        Number of contexts.
+    transition : :class:`.BaseRecurrent`
+        The recurrent transition.
+    attention : :class:`.Brick`
+        The attention mechanism.
+    distribute : :class:`.Brick`, optional
+        Distributes the information from glimpses across the input
+        sequences of the transition. By default a :class:`.Distribute` is
+        used, and those inputs containing the "mask" substring in their
+        name are not affected.
+    attended_name : str
+        The name of the attended context. If ``None``, "attended"
+        or the first context of the recurrent transition is used
+        depending on the value of `add_contents` flag.
+    attended_mask_name : str
+        The name of the mask for the attended context. If ``None``,
+        "attended_mask" or the second context of the recurrent transition
+        is used depending on the value of `add_contents` flag.
+
+    Notes
+    -----
+    See :class:`.Initializable` for initialization parameters.
+
     """
 
-    def __init__(self, num_contexts, transition, attention, **kwargs):
+    def __init__(self, num_contexts, transition, attention, distribute=None,
+                 **kwargs):
         super(AttentionRecurrentWithMultiContext, self).__init__(**kwargs)
         self._sequence_names = list(transition.apply.sequences)
         self._state_names = list(transition.apply.states)
@@ -157,10 +179,11 @@ class AttentionRecurrentWithMultiContext(AbstractAttentionRecurrent,
         self._context_names += attended_names + [attended_mask_name]
         self._context_names = list(set(self._context_names))
 
-        normal_inputs = [name for name in self._sequence_names
-                         if 'mask' not in name]
-        distribute = Distribute(target_names=normal_inputs,
-                                source_name=attention.take_glimpses.outputs[0])
+        if not distribute:
+            normal_inputs = [name for name in self._sequence_names
+                             if 'mask' not in name]
+            distribute = Distribute(target_names=normal_inputs,
+                                    source_name=attention.take_glimpses.outputs[0])
 
         self.transition = transition
         self.attention = attention
@@ -183,7 +206,6 @@ class AttentionRecurrentWithMultiContext(AbstractAttentionRecurrent,
     def _push_allocation_config(self):
         self.attention.state_dims = self.transition.get_dims(
             self.attention.state_names)
-
         self.distribute.source_dim = self.attention.get_dim(
             self.distribute.source_name)
         self.distribute.target_dims = self.transition.get_dims(
@@ -302,16 +324,17 @@ class AttentionRecurrentWithMultiContext(AbstractAttentionRecurrent,
         return self._context_names
 
     @application
-    def initial_state(self, state_name, batch_size, **kwargs):
-        if state_name in self._glimpse_names:
-            # TODO: find a better solution to this, variable name for both
-            # weigted_averages and weights returns as the same,
-            # 'attention_initial_glimpses_output_0' which should be different
-            return self.attention.initial_glimpses(
-                state_name, batch_size, [kwargs[name] for name in
-                                         self.attended_names]
-                )[self._glimpse_names.index(state_name)]
-        return self.transition.initial_state(state_name, batch_size, **kwargs)
+    def initial_states(self, batch_size, **kwargs):
+        return (pack(self.transition.initial_states(
+                     batch_size, **kwargs)) +
+                pack(self.attention.initial_glimpses(
+                     batch_size,
+                     [kwargs[self.attended_names[ii]]
+                      for ii in xrange(self.num_contexts)])))
+
+    @initial_states.property('outputs')
+    def initial_states_outputs(self):
+        return self.do_apply.states
 
     def get_dim(self, name):
         if name in self._glimpse_names:

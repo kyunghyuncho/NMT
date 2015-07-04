@@ -892,8 +892,8 @@ def get_config_fide_en_condAll():
 
     # Timing related
     config['reload'] = True
-    config['save_freq'] = 1000
-    config['sampling_freq'] = 17
+    config['save_freq'] = 1
+    config['sampling_freq'] = 1
     config['bleu_val_freq'] = 1
     config['val_burn_in'] = 0
     config['finish_after'] = 10000000

@@ -5,14 +5,14 @@ import os
 import re
 import time
 
-from six.moves import cPickle
+from contextlib import closing
 from toolz import merge
 
 from blocks.algorithms import DifferentiableCostMinimizer
 from blocks.extensions import SimpleExtension, TrainingExtension
 from blocks.monitoring.evaluators import AggregationBuffer
 from blocks.extensions.monitoring import MonitoringExtension
-from blocks.serialization import load_parameter_values, secure_dump
+from blocks.serialization import secure_dump, load, BRICK_DELIMITER
 from blocks.utils import reraise_as
 
 logger = logging.getLogger(__name__)
@@ -165,23 +165,21 @@ class MainLoopDumpManagerWMT15(object):
         return os.path.join(self.folder, 'log')
 
     def dump_iteration_state(self, main_loop):
-        with open(self.path_to_iteration_state, "wb") as destination:
-            secure_dump(main_loop.iteration_state, destination)
+        secure_dump(main_loop.iteration_state, self.path_to_iteration_state)
 
     def dump_log(self, main_loop):
-        with open(self.path_to_log, "wb") as destination:
-            secure_dump(main_loop.log, destination)
+        secure_dump(main_loop.log, self.path_to_log)
 
     def load_parameters(self):
         return load_parameter_values(self.path_to_parameters)
 
     def load_iteration_state(self):
         with open(self.path_to_iteration_state, "rb") as source:
-            return cPickle.load(source)
+            return load(source)
 
     def load_log(self):
         with open(self.path_to_log, "rb") as source:
-            return cPickle.load(source)
+            return load(source)
 
     def load(self):
         return (self.load_parameters(),
@@ -195,8 +193,8 @@ class MainLoopDumpManagerWMT15(object):
             logger.info(" ...loading model parameters")
             params_all = self.load_parameters()
             for i in xrange(main_loop.num_cgs):
-                params_this = main_loop.models[i].get_params()
-                missing = set(params_this) - set(params_all)
+                params_this = main_loop.models[i].get_parameter_dict()
+                missing = set(params_this.keys()) - set(params_all.keys())
                 for pname in params_this.keys():
                     if pname in params_all:
                         val = params_all[pname]
@@ -242,7 +240,7 @@ class MainLoopDumpManagerWMT15(object):
         params_to_save = []
         for i in xrange(main_loop.num_cgs):
             params_to_save.append(
-                main_loop.models[i].get_param_values())
+                main_loop.models[i].get_parameter_values())
         save_parameter_values(merge(params_to_save),
                               self.path_to_parameters)
 
@@ -252,7 +250,7 @@ class MainLoopDumpManagerWMT15(object):
             algo = main_loop.algorithm.algorithms[i]
             accums = algo.step_rule_updates
             params = algo.steps.items()
-            model_params = main_loop.models[i].get_params()
+            model_params = main_loop.models[i].get_parameter_dict()
 
             # Reshape this long list into (num_params, num_accums_per_param)
             num_params = len(params)
@@ -300,7 +298,7 @@ class MainLoopDumpManagerWMT15(object):
                            for name, value in source.items()}
             source.close()
             algo = main_loop.algorithm.algorithms[i]
-            model_params = main_loop.models[i].get_params()
+            model_params = main_loop.models[i].get_parameter_dict()
             steps = algo.steps.items()
 
             for pidx in xrange(len(steps)):
@@ -332,7 +330,7 @@ class DumpWithMultiCG(SimpleExtension):
     """
     def __init__(self, saveto, save_accumulators=False, **kwargs):
         kwargs.setdefault("after_training", True)
-        super(DumpWithMultiCG, self).__init__(saveto, **kwargs)
+        super(DumpWithMultiCG, self).__init__(**kwargs)
         self.manager = MainLoopDumpManagerWMT15(
             saveto, save_accumulators=save_accumulators)
 
@@ -365,6 +363,28 @@ class LoadFromDumpMultiCG(TrainingExtension):
             self.main_loop.log.current_row[LOADED_FROM] = self.manager.folder
         except Exception:
             reraise_as("Failed to load the state")
+
+
+def load_parameter_values(path):
+    """Load parameter values saved by :func:`dump`.
+
+    This is a thin wrapper over :func:`numpy.load`. It changes the names of
+    the arrays to ones compatible with :meth:`.Model.set_param_values`.
+
+    Parameters
+    ----------
+    path : str or file
+        The source for loading from.
+
+    Returns
+    -------
+    A dictionary of (parameter name, numpy array) pairs.
+
+    """
+    with closing(numpy.load(path)) as source:
+        param_values = {'/' + name.replace(BRICK_DELIMITER, '/'): value
+                        for name, value in source.items() if name != 'pkl'}
+    return param_values
 
 
 def save_parameter_values(param_values, path):

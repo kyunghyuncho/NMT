@@ -1,8 +1,11 @@
+import numpy
+
 from blocks.bricks import (Tanh, Linear,
                            Initializable, MLP, Logistic)
 from blocks.bricks.base import application
 from blocks.bricks.recurrent import recurrent, Bidirectional, BaseRecurrent
-from blocks.utils import shared_floatx_nans
+from blocks.roles import add_role, WEIGHT, INITIAL_STATE
+from blocks.utils import shared_floatx_nans, shared_floatx_zeros
 
 from picklable_itertools.extras import equizip
 from theano import tensor
@@ -52,12 +55,9 @@ class GRUwithContext(BaseRecurrent, Initializable):
 
     """
     def __init__(self, attended_dim, dim, context_dim, activation=None,
-                 gate_activation=None, use_update_gate=True,
-                 use_reset_gate=True, **kwargs):
+                 gate_activation=None, **kwargs):
         super(GRUwithContext, self).__init__(**kwargs)
         self.dim = dim
-        self.use_update_gate = use_update_gate
-        self.use_reset_gate = use_reset_gate
 
         if not activation:
             activation = Tanh()
@@ -79,40 +79,32 @@ class GRUwithContext(BaseRecurrent, Initializable):
         self.children.append(self.initial_transformer)
 
         # Gate transformers for source selector
-        self.src_selector_embedder = Linear(
+        self.src_selector_gate_embedder = Linear(
+                input_dim=context_dim,
+                output_dim=self.dim * 2,
+                use_bias=False,
+                name='src_selector_gate_embedder')
+        self.children.append(self.src_selector_gate_embedder)
+        self.src_selector_input_embedder = Linear(
                 input_dim=context_dim,
                 output_dim=self.dim,
                 use_bias=False,
-                name='src_selector_embedder')
-        self.children.append(self.src_selector_embedder)
-        self.src_selector_embedder_update = Linear(
-                input_dim=context_dim,
-                output_dim=self.dim,
-                use_bias=False,
-                name='src_selector_embedder')
-        self.children.append(self.src_selector_embedder_update)
-        self.src_selector_embedder_reset = Linear(
-                input_dim=context_dim,
-                output_dim=self.dim,
-                use_bias=False,
-                name='src_selector_embedder')
-        self.children.append(self.src_selector_embedder_reset)
+                name='src_selector_input_embedder')
+        self.children.append(self.src_selector_input_embedder)
 
     @property
     def state_to_state(self):
-        return self.params[0]
+        return self.parameters[0]
 
     @property
-    def state_to_update(self):
-        return self.params[1]
-
-    @property
-    def state_to_reset(self):
-        return self.params[2]
+    def state_to_gates(self):
+        return self.parameters[1]
 
     def get_dim(self, name):
         if name == 'mask':
             return 0
+        if name == 'gate_inputs':
+            return 2 * self.dim
         if name in self.apply.sequences + self.apply.states:
             return self.dim
         if name in self.apply.contexts:
@@ -120,67 +112,79 @@ class GRUwithContext(BaseRecurrent, Initializable):
         return super(GRUwithContext, self).get_dim(name)
 
     def _allocate(self):
-        def new_param(name):
-            return shared_floatx_nans((self.dim, self.dim), name=name)
-
-        self.params.append(new_param('state_to_state'))
-        self.params.append(new_param('state_to_update')
-                           if self.use_update_gate else None)
-        self.params.append(new_param('state_to_reset')
-                           if self.use_reset_gate else None)
+        self.parameters.append(shared_floatx_nans((self.dim, self.dim),
+                               name='state_to_state'))
+        self.parameters.append(shared_floatx_nans((self.dim, 2 * self.dim),
+                               name='state_to_gates'))
+        self.parameters.append(shared_floatx_zeros((self.dim,),
+                               name="initial_state"))
+        for i in range(2):
+            if self.parameters[i]:
+                add_role(self.parameters[i], WEIGHT)
+        add_role(self.parameters[2], INITIAL_STATE)
 
     def _initialize(self):
         self.weights_init.initialize(self.state_to_state, self.rng)
-        if self.use_update_gate:
-            self.weights_init.initialize(self.state_to_update, self.rng)
-        if self.use_reset_gate:
-            self.weights_init.initialize(self.state_to_reset, self.rng)
+        state_to_update = self.weights_init.generate(
+            self.rng, (self.dim, self.dim))
+        state_to_reset = self.weights_init.generate(
+            self.rng, (self.dim, self.dim))
+        self.state_to_gates.set_value(
+            numpy.hstack([state_to_update, state_to_reset]))
 
-    @recurrent(states=['states'], outputs=['states'], contexts=['attended_1'])
-    def apply(self, inputs, update_inputs=None, reset_inputs=None,
-              states=None, mask=None, attended_1=None):
-        if (self.use_update_gate != (update_inputs is not None)) or \
-                (self.use_reset_gate != (reset_inputs is not None)):
-            raise ValueError("Configuration and input mismatch: You should "
-                             "provide inputs for gates if and only if the "
-                             "gates are on.")
+    @recurrent(sequences=['mask', 'inputs', 'gate_inputs'],
+               states=['states'], outputs=['states'], contexts=['attended_1'])
+    def apply(self, inputs, gate_inputs, states, mask=None, attended_1=None):
+        """Apply the gated recurrent transition.
 
-        states_reset = states
+        Parameters
+        ----------
+        states : :class:`~tensor.TensorVariable`
+            The 2 dimensional matrix of current states in the shape
+            (batch_size, dim). Required for `one_step` usage.
+        inputs : :class:`~tensor.TensorVariable`
+            The 2 dimensional matrix of inputs in the shape (batch_size,
+            dim)
+        gate_inputs : :class:`~tensor.TensorVariable`
+            The 2 dimensional matrix of inputs to the gates in the
+            shape (batch_size, 2 * dim).
+        mask : :class:`~tensor.TensorVariable`
+            A 1D binary array in the shape (batch,) which is 1 if there is
+            data available, 0 if not. Assumed to be 1-s only if not given.
+        attended_1 : :class:`~tensor.TensorVariable`
+            A 2 dimensional matrix of inputs to gates from attended 1st in the
+            shape (batchs_size, attended_dim).
 
-        if self.use_reset_gate:
-            # TODO: move this computation out
-            src_embed_reset = self.src_selector_embedder_reset.apply(
-                attended_1)
-            reset_values = self.gate_activation.apply(
-                states.dot(self.state_to_reset) +
-                reset_inputs + src_embed_reset)
-            states_reset = states * reset_values
 
-        # TODO: move this computation out
-        src_embed = self.src_selector_embedder.apply(attended_1)
+        Returns
+        -------
+        output : :class:`~tensor.TensorVariable`
+            Next states of the network.
+
+        """
+
+        # TODO: move these computations out
+        gate_src_embeds = self.src_selector_gate_embedder.apply(attended_1)
+        input_src_embeds = self.src_selector_input_embedder.apply(attended_1)
+
+        gate_values = self.gate_activation.apply(
+            states.dot(self.state_to_gates) + gate_inputs + gate_src_embeds)
+        update_values = gate_values[:, :self.dim]
+        reset_values = gate_values[:, self.dim:]
+        states_reset = states * reset_values
         next_states = self.activation.apply(
-            states_reset.dot(self.state_to_state) +
-            inputs + src_embed)
-
-        if self.use_update_gate:
-            # TODO: move this computation out
-            src_embed_update = self.src_selector_embedder_update.apply(
-                attended_1)
-            update_values = self.gate_activation.apply(
-                states.dot(self.state_to_update) +
-                update_inputs + src_embed_update)
-            next_states = (next_states * update_values +
-                           states * (1 - update_values))
-
+            states_reset.dot(self.state_to_state) + inputs + input_src_embeds)
+        next_states = (next_states * update_values +
+                       states * (1 - update_values))
         if mask:
             next_states = (mask[:, None] * next_states +
                            (1 - mask[:, None]) * states)
-
         return next_states
 
-    @application
+    @application(outputs=apply.states)
     def initial_state(self, state_name, batch_size, *args, **kwargs):
         """Conditions on last hidden state and source selector."""
+        import ipdb;ipdb.set_trace()
         if state_name == 'states':
             attended_0 = kwargs['attended_0']
             attended_1 = kwargs['attended_1']
@@ -192,15 +196,11 @@ class GRUwithContext(BaseRecurrent, Initializable):
         dim = self.get_dim(state_name)
         if dim == 0:
             return tensor.zeros((batch_size,))
-        return tensor.zeros((batch_size, dim))
+        return [tensor.repeat(self.parameters[2][None, :], batch_size, 0)]
 
     @apply.property('sequences')
     def apply_inputs(self):
-        sequences = ['mask', 'inputs']
-        if self.use_update_gate:
-            sequences.append('update_inputs')
-        if self.use_reset_gate:
-            sequences.append('reset_inputs')
+        sequences = ['mask', 'inputs', 'gate_inputs']
         return sequences
 
     @apply.property('contexts')
