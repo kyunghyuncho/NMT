@@ -185,7 +185,7 @@ def get_config_wmt15_fi_en_40k_refMultiCG():
     return config
 
 
-def get_config_wmt15_de_en_51k_refMultiCG():
+def get_config_de_en_50k_refMultiCG():
     config = {}
 
     # Model related
@@ -216,8 +216,8 @@ def get_config_wmt15_de_en_51k_refMultiCG():
     config['trg_vocab'] = basedir + 'joint_vocab.sub.en.52k.pkl'
     config['src_data'] = basedir + 'de2en/all.tok.clean.shuf.split.de-en.de'
     config['trg_data'] = basedir + 'de2en/all.tok.clean.shuf.de-en.en'
-    config['src_vocab_size'] = 40000
-    config['trg_vocab_size'] = 40000
+    config['src_vocab_size'] = 200000
+    config['trg_vocab_size'] = 50000
     config['unk_id'] = 1
     config['src_eos_idx'] = 0
     config['trg_eos_idx'] = 0
@@ -227,7 +227,7 @@ def get_config_wmt15_de_en_51k_refMultiCG():
     config['bleu_script'] = '/data/lisatmp3/firatorh/turkishParallelCorpora/iwslt14/scripts/multi-bleu.perl'
     config['val_set'] = '/data/lisatmp3/jeasebas/nmt/data/wmt15/full/dev/tok/newstest2013.tok.de'
     config['val_set_grndtruth'] = '/data/lisatmp3/jeasebas/nmt/data/wmt15/full/dev/tok/newstest2013.tok.en'
-    config['val_set_out'] = config['saveto'] + '/adadelta_51k_out.txt'
+    config['val_set_out'] = config['saveto'] + '/adadelta_50k_out.txt'
     config['output_val_set'] = True
     config['beam_size'] = 20
 
@@ -235,8 +235,8 @@ def get_config_wmt15_de_en_51k_refMultiCG():
     config['reload'] = True
     config['save_freq'] = 1000
     config['sampling_freq'] = 17
-    config['bleu_val_freq'] = 5000
-    config['val_burn_in'] = 60000
+    config['bleu_val_freq'] = 2000
+    config['val_burn_in'] = 80000
 
     # Monitoring related
     config['hook_samples'] = 2
