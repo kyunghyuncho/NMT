@@ -116,12 +116,12 @@ class GRUwithContext(BaseRecurrent, Initializable):
                                name='state_to_state'))
         self.parameters.append(shared_floatx_nans((self.dim, 2 * self.dim),
                                name='state_to_gates'))
-        self.parameters.append(shared_floatx_zeros((self.dim,),
-                               name="initial_state"))
+        #self.parameters.append(shared_floatx_zeros((self.dim,),
+        #                       name="initial_state"))
         for i in range(2):
             if self.parameters[i]:
                 add_role(self.parameters[i], WEIGHT)
-        add_role(self.parameters[2], INITIAL_STATE)
+        #add_role(self.parameters[2], INITIAL_STATE)
 
     def _initialize(self):
         self.weights_init.initialize(self.state_to_state, self.rng)
@@ -182,21 +182,15 @@ class GRUwithContext(BaseRecurrent, Initializable):
         return next_states
 
     @application(outputs=apply.states)
-    def initial_state(self, state_name, batch_size, *args, **kwargs):
+    def initial_states(self, batch_size, *args, **kwargs):
         """Conditions on last hidden state and source selector."""
-        import ipdb;ipdb.set_trace()
-        if state_name == 'states':
-            attended_0 = kwargs['attended_0']
-            attended_1 = kwargs['attended_1']
-            attended = tensor.concatenate(
-                [attended_1, attended_0[0, :, -self.attended_dim:]],
-                axis=1)
-            initial_state = self.initial_transformer.apply(attended)
-            return initial_state
-        dim = self.get_dim(state_name)
-        if dim == 0:
-            return tensor.zeros((batch_size,))
-        return [tensor.repeat(self.parameters[2][None, :], batch_size, 0)]
+        attended_0 = kwargs['attended_0']
+        attended_1 = kwargs['attended_1']
+        attended = tensor.concatenate(
+            [attended_1, attended_0[0, :, -self.attended_dim:]],
+            axis=1)
+        initial_state = self.initial_transformer.apply(attended)
+        return [initial_state]
 
     @apply.property('sequences')
     def apply_inputs(self):
