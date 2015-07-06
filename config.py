@@ -920,7 +920,7 @@ def get_config_fide_en_condAll_reloadGH():
     config['dec_embed'] = 620
     config['representation_dim'] = 2000  # this is the joint annotation
                                          # dimension of encoders
-    config['saveto'] = 'multiEnc_FIDE_condAll_scratch'
+    config['saveto'] = 'multiEnc_FIDE_condAll_reloadGH'
 
     # Optimization related
     config['batch_size_enc_0'] = 80
@@ -982,7 +982,7 @@ def get_config_fide_en_condAll_reloadGH():
     config['save_freq'] = 1000
     config['sampling_freq'] = 17
     config['bleu_val_freq'] = 4000
-    config['val_burn_in'] = 80000
+    config['val_burn_in'] = 40000
     config['finish_after'] = 10000000
 
     # Monitoring related
