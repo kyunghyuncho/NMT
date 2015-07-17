@@ -836,8 +836,8 @@ def get_config_fide_en_condAll_scratch():
     config['saveto'] = 'multiEnc_FIDE_condAll_scratch'
 
     # Optimization related
-    config['batch_size_enc_0'] = 72
-    config['batch_size_enc_1'] = 72
+    config['batch_size_enc_0'] = 60
+    config['batch_size_enc_1'] = 60
     config['sort_k_batches'] = 12
     config['step_rule'] = 'Adam'
     config['learning_rate'] = 1e-4

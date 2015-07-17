@@ -382,8 +382,13 @@ def load_parameter_values(path):
 
     """
     with closing(numpy.load(path)) as source:
-        param_values = {'/' + name.replace(BRICK_DELIMITER, '/'): value
-                        for name, value in source.items() if name != 'pkl'}
+        param_values = {}
+        for name, value in source.items():
+            if name != 'pkl':
+                name_ = name.replace(BRICK_DELIMITER, '/')
+                if not name_.startswith('/'):
+                    name_ = '/' + name_
+                param_values[name_] = value
     return param_values
 
 
