@@ -78,26 +78,6 @@ class GRUwithContext(BaseRecurrent, Initializable):
                 name='state_initializer')
         self.children.append(self.initial_transformer)
 
-        # Gate transformers for source selector
-        self.src_selector_embedder = Linear(
-                input_dim=context_dim,
-                output_dim=self.dim,
-                use_bias=False,
-                name='src_selector_embedder')
-        self.children.append(self.src_selector_embedder)
-        self.src_selector_embedder_update = Linear(
-                input_dim=context_dim,
-                output_dim=self.dim,
-                use_bias=False,
-                name='src_selector_embedder')
-        self.children.append(self.src_selector_embedder_update)
-        self.src_selector_embedder_reset = Linear(
-                input_dim=context_dim,
-                output_dim=self.dim,
-                use_bias=False,
-                name='src_selector_embedder')
-        self.children.append(self.src_selector_embedder_reset)
-
     @property
     def state_to_state(self):
         return self.params[0]
@@ -148,27 +128,19 @@ class GRUwithContext(BaseRecurrent, Initializable):
         states_reset = states
 
         if self.use_reset_gate:
-            # TODO: move this computation out
-            src_embed_reset = self.src_selector_embedder_reset.apply(
-                attended_1)
             reset_values = self.gate_activation.apply(
                 states.dot(self.state_to_reset) +
-                reset_inputs + src_embed_reset)
+                reset_inputs)
             states_reset = states * reset_values
 
-        # TODO: move this computation out
-        src_embed = self.src_selector_embedder.apply(attended_1)
         next_states = self.activation.apply(
             states_reset.dot(self.state_to_state) +
-            inputs + src_embed)
+            inputs)
 
         if self.use_update_gate:
-            # TODO: move this computation out
-            src_embed_update = self.src_selector_embedder_update.apply(
-                attended_1)
             update_values = self.gate_activation.apply(
                 states.dot(self.state_to_update) +
-                update_inputs + src_embed_update)
+                update_inputs)
             next_states = (next_states * update_values +
                            states * (1 - update_values))
 

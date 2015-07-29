@@ -173,7 +173,7 @@ class BleuValidator(SimpleExtension, SamplingBase):
                  bleu_script, val_set_out, val_set_grndtruth, src_vocab_size,
                  src_selector=None, trg_selector=None,
                  n_best=1, track_n_models=1, trg_ivocab=None,
-                 beam_size=5, val_burn_in=10000,
+                 beam_size=5, val_burn_in=10000, normalize=True,
                  _reload=True, enc_id=None, saveto=None,
                  src_eos_idx=-1, trg_eos_idx=-1, **kwargs):
         super(BleuValidator, self).__init__(**kwargs)
@@ -192,6 +192,7 @@ class BleuValidator(SimpleExtension, SamplingBase):
         self.trg_ivocab = trg_ivocab
         self.beam_size = beam_size
         self.val_burn_in = val_burn_in
+        self.normalize = normalize
         self._reload = _reload
         self.enc_id = enc_id if enc_id is not None else ""
         self.saveto = saveto if saveto else "."
@@ -317,6 +318,10 @@ class BleuValidator(SimpleExtension, SamplingBase):
                     input_values=inputs_dict,
                     max_length=3*len(seq), eol_symbol=self.trg_eos_idx,
                     ignore_first_eol=True)
+
+            if self.normalize:
+                lengths = numpy.array([len(s) for s in trans])
+                costs = costs / lengths
 
             nbest_idx = numpy.argsort(costs)[:self.n_best]
             for j, best in enumerate(nbest_idx):

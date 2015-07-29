@@ -29,14 +29,14 @@ from blocks.select import Selector
 from blocks.bricks.sequence_generators import Readout, SoftmaxEmitter
 
 import config
-import multiCG_stream
 
 from multiCG_algorithm import (GradientDescentWithMultiCG,
                                MainLoopWithMultiCG)
 from multiCG_attention import SequenceMultiContentAttention
 from multiCG_extensions import (TrainingDataMonitoringWithMultiCG,
                                 DumpWithMultiCG,
-                                LoadFromDumpMultiCG)
+                                LoadFromDumpMultiCG,
+                                PrintMultiStream)
 from multiCG_recurrent import BidirectionalWMT15, GRUwithContext
 from multiCG_sequence_generator import (
     LookupFeedbackWMT15, SequenceGeneratorWithMultiContext)
@@ -437,7 +437,7 @@ def main(config, tr_stream, dev_streams):
         FinishAfter(after_n_batches=config['finish_after']),
         TrainingDataMonitoringWithMultiCG(observables, after_batch=True),
         Printing(after_batch=True),
-        multiCG_stream.PrintMultiStream(after_batch=True),
+        PrintMultiStream(after_batch=True),
         DumpWithMultiCG(saveto=config['saveto'],
                         save_accumulators=config['save_accumulators'],
                         every_n_batches=config['save_freq'])]
